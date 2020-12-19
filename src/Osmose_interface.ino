@@ -25,8 +25,11 @@ NexText seq = NexText(1, 24, "seq");
 NexText brixSeve = NexText(2, 17, "brixSeve");
 NexText brixConc = NexText(2, 18, "brixConc");
 
-NexText allData = NexText(5, 7, "allData");
-NexText oprData = NexText(5, 8, "oprData");
+NexText tl0 = NexText(5, 8, "tl0");
+NexText tl1 = NexText(5, 9, "tl1");
+NexText tl2 = NexText(5, 10, "tl2");
+NexText tl3 = NexText(5, 11, "tl3");
+NexText tl4 = NexText(5, 12, "tl4");
 
 NexButton bm = NexButton(2, 34, "bm");
 NexButton bp = NexButton(2, 33, "bp");
@@ -36,13 +39,14 @@ NexButton bOkBRIX = NexButton(2, 25, "bOk");
 NexButton bOkLAV = NexButton(3, 4, "bOk");
 NexButton bOkRINC = NexButton(4, 4, "bOk");
 NexButton bOkSUMM = NexButton(5, 1, "bOk");
+NexButton bSommaire = NexButton(5, 7, "bSommaire");
 
 NexVar fieldSelect = NexVar(2, 16, "flsel");
 
 // Liste des objets que l'on veut surveiller
 NexTouch *nex_listen_list[] = 
 {
-  &bp, &bm, &bOkOSM, &bOkBRIX, &bOkLAV, &bOkRINC, &bOkSUMM,
+  &bp, &bm, &bOkOSM, &bOkBRIX, &bOkLAV, &bOkRINC, &bOkSUMM, &bSommaire,
   NULL
 };
 
@@ -62,7 +66,7 @@ double Pres = 0;
 int heater = D3;                  // Contrôle le transistor du chauffage
 
 /* Define a log handler on Serial1 for log messages */
-SerialLogHandler logHandler(115200, LOG_LEVEL_INFO, {   // Logging level for non-application messages
+SerialLogHandler logHandler(115200, LOG_LEVEL_TRACE, {   // Logging level for non-application messages
     { "app", LOG_LEVEL_INFO }                      // Logging level for application messages
 });
 
@@ -181,15 +185,29 @@ void bOkSUMMPopCallback(void *ptr) {
 }
 
 
+// Rinçage PANEL button Ok PUSH callback
+void bSommairePopCallback(void *ptr) {
+  writeSummaryField();
+  Log.info("bSommairePopCallback!");
+}
+
+
 // write to allData summary field
 void writeSummaryField() {
-  char tmp[80];
+  char tmp[100];
   if (operDataValid == true && brixDataValid == true){
-    Log.info("  operDataValid= %d, brixDataValid= %d", operDataValid, brixDataValid);
-    // sprintf(buffer, "%3.1f %8.1f  %6.1f  %6.1f  %6.1f  %6.1f  %6.1f  %5.1f  %5.0f  %s", Seve, Conc, Col1, Col2, Col3, Col4, Conc, Temp, Pres, filterSeq.c_str());
-    sprintf(tmp, "%3.1f %8.1f  %6.1f  %6.1f  %6.1f  %6.1f  %6.1f  %5.1f  %5.0f", Seve, Conc, Col1, Col2, Col3, Col4, Conc, Temp, Pres);
-    writeNextionTextData(allData, tmp);
-    Log.info("  writeSummaryField: Wrote allData field!: buffer= %s", buffer);
+    // Ligne 0: entête 1
+    sprintf(tmp, "  Densite                    Debits                  Temperature   Pression   Sequence    Duree");
+    writeNextionTextData(tl0, tmp);
+    // Ligne 1: entête 2
+    sprintf(tmp, "Seve   Conc.     Col1   Col2   Col3   Col4    Conc.      deg C    ls/po.ca.               hr:min");
+    writeNextionTextData(tl1, tmp);
+    // Ligne 2: Données
+    sprintf(tmp, "%4.1f %6.1f  %8.1f  %5.1f  %5.1f  %5.1f  %6.1f  %9.1f  %9.0f       %s    %s", \
+                  Seve, Conc, Col1, Col2, Col3, Col4, Conc, Temp, Pres, filterSeq.c_str(), "02:30");
+    writeNextionTextData(tl2, tmp);
+
+    Log.info("  writeSummaryField: Wrote allData field!: buffer= %s", tmp);
   }
   Log.info("writeSummaryField: operDataValid= %d, brixDataValid= %d", operDataValid, brixDataValid);
 }
@@ -213,8 +231,9 @@ void setup() {
   bOkLAV.attachPop(bOkLAVPopCallback);
   bOkRINC.attachPop(bOkRINCPopCallback);
   bOkSUMM.attachPop(bOkSUMMPopCallback);
+  bSommaire.attachPop(bSommairePopCallback);
 
-  // nexSerial.print("rest");
+  nexSerial.print("rest\xFF\xFF\xFF");
   delay(2000);
   memset(buffer, 0, sizeof(buffer)); // Clear buffer
   // dbSerial.println("Démarrage");
