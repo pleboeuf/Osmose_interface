@@ -1,0 +1,10 @@
+*.sqlite3
+*.bin
+*.txt
+*.DS_Store
+*.zip
+*.0
+*.cpp
+*rsa*
+target/
+SelectDeviceToCompile.ino
