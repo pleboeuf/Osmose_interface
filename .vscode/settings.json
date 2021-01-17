@@ -3,7 +3,11 @@
     "C_Cpp.default.configurationProvider": "particle.particle-vscode-core",
     "cortex-debug.openocdPath": "${command:particle.getDebuggerOpenocdPath}",
     "files.associations": {
-        "*.ino": "cpp"
+        "*.ino": "cpp",
+        "ostream": "cpp",
+        "*.tcc": "cpp",
+        "stdexcept": "cpp",
+        "string": "cpp"
     },
     "particle.firmwareVersion": "2.0.1",
     "particle.targetDevice": "PL-Ph-A"
