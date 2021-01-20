@@ -31,10 +31,12 @@
 String sysStateMsg = sysOffMsg;
 
 // Firmware version et date
-#define FirmwareVersion "1.0.0" // Version du firmware du capteur.
+#define FirmwareVersion "1.0.1" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
+String VersionNo = FirmwareVersion;
+String VersionStr = "tVers.txt=\"Osmose Logger V" + VersionNo + "\"\xFF\xFF\xFF";
 
 USARTSerial &nexSerial = Serial1;
 
@@ -116,7 +118,7 @@ enum Mode {
   concentration4321, //1
   lavage_normal,     //2
   lavage_recirc,     //3
-  rinse,             //4
+  rinsage,           //4
   indefini           //5
 };
 String modeText[] = {
@@ -124,7 +126,7 @@ String modeText[] = {
   "concentration 4-3-2-1", //1
   "lavage_normal", //2
   "lavage_recirc", //3
-  "rinçage",       //4
+  "rinsage",       //4
   "indefini"       //5
 };
 enum Etat {
@@ -149,12 +151,25 @@ Mode System_mode = indefini;
 Etat System_state = arret;
 
 String formatDateTime(time32_t t);
+
+char now[12];
+int previousSec = 0;
+unsigned long currentTime = 0;
+unsigned long lastUpdateTime = 0;
 unsigned startTime;
 unsigned endTime;
 unsigned tempsOperOsmTotal = 0;
 unsigned tempsOperOsmSequence = 0;
 unsigned tempsOperLavage = 0;
 unsigned tempsOperRinsage = 0;
+unsigned nextMinute = 60;
+static uint32_t tempsOperEnCour = 0;
+static uint32_t tempsSeq1234 = 0;
+static uint32_t tempsSeq4321 = 0;
+static uint32_t tempsDepuisLavage = 0;
+const uint32_t seqTimeLimit = 4 * 60 * 60; // 4 hours
+const uint32_t depuisLavageTimeLimit = 12 * 60 * 60; // 4 hours
+const uint32_t dataEntryTimeLimit = 10 * 60; // 1 min
 
 bool operDataValid = false;
 bool brixDataValid = false;
@@ -170,32 +185,17 @@ bool pushDataFlag = false;
 int heater = D3; // Contrôle le transistor du chauffage
 int alarmBuzzer = D6; // Contrôle le buzzer d'alerte
 int optoInput = A1;
+int alarmStatus = 0;
 
 bool PumpCurrentState = pumpOFFstate; // Initialize pump in the OFF state
 bool PumpOldState = pumpOFFstate;     // Pour déterminer le chanement d'état
 
-unsigned long currentTime = 0;
-unsigned long lastUpdateTime = 0;
-
-static uint32_t tempsOperEnCour = 0;
-static uint32_t tempsSeq1234 = 0;
-static uint32_t tempsSeq4321 = 0;
-static uint32_t tempsDepuisLavage = 0;
-const uint32_t seqTimeLimit = 4 * 60 * 60; // 4 hours
-const uint32_t depuisLavageTimeLimit = 12 * 60 * 60; // 4 hours
-const uint32_t dataEntryTimeLimit = 10 * 60; // 1 min
-
-int alarmStatus = 0;
-
-char now[12];
-int previousSec = 0;
-int previousMin = 0;
-volatile unsigned long changeTime = 0; // Moment du dernier changement d'état de la pompe
+// volatile unsigned long changeTime = 0; // Moment du dernier changement d'état de la pompe
 
 /* Define a log handler on Serial1 for log messages */
 SerialLogHandler logHandler(115200, LOG_LEVEL_INFO, {
                                                         // Logging level for non-application messages
-                                                        {"app", LOG_LEVEL_INFO} // Logging level for application messages
+                                                        {"app", LOG_LEVEL_NONE} // Logging level for application messages
                                                     });
 
 // Variables liés aux publications
@@ -217,13 +217,15 @@ public:
     // IMPORTANT: Pump is active LOW. Pump is ON when PumpCurrentState == false
     delayMicroseconds(pumpDebounceDelay * 1000);
     PumpCurrentState = digitalRead(A1);
-    changeTime = millis();
+    // changeTime = millis();
   }
 };
 PumpState_A1 ThePumpState; // Instantiate the class A1State
 
 
-// *** Main program ***
+// **************************************************************
+//                  *** Main program ***
+// **************************************************************
 
 // **************************************************************
 // setup() runs once, when the device is first turned on.
@@ -280,10 +282,10 @@ void setup()
     newGenTimestamp = currentTime; // Init generation at boot time
     lastUpdateTime = currentTime;
     previousSec = Time.second();
-    previousMin = Time.minute();
     System_mode = indefini;
     System_state = arret;
     initSummaryPanel();
+    nexSerial.print(VersionStr);
     nexSerial.print("ind.txt=\"Off\"\xFF\xFF\xFF");
     nexSerial.print("ind.bco=RED\xFF\xFF\xFF");
     // Clear counter;
@@ -323,8 +325,8 @@ void loop()
   }
 
   // Publish durations every minute if running
-  if (Time.minute() != previousMin) {
-    previousMin = Time.minute();
+  if (tempsOperEnCour == nextMinute) {
+    nextMinute = tempsOperEnCour + 60;
     if (System_state == marche) {
       publishTimeCounters();
       if (alarmStatus > 0) {
@@ -542,7 +544,7 @@ void bGotoRincageCallback(void *ptr) {
   if (System_state == marche) {
     nexSerial.print("page 4\xFF\xFF\xFF");
     tempsDepuisLavage = tempsDepuisLavage - tempsOperEnCour;
-    System_mode = rinse;
+    System_mode = rinsage;
   }
   Log.info("bGotoRincageCallback!");
 }
@@ -574,7 +576,7 @@ void bOkLAVPopCallback(void *ptr) {
 // **************************************************************
 void bOkRINCPopCallback(void *ptr) {
   if (System_state == marche) {
-    System_mode = rinse;
+    System_mode = rinsage;
     sysStateMsg = sysRinse;
     nexSerial.print("page 0\xFF\xFF\xFF");
     nexSerial.print("vis cRinc.id=1\"\xFF\xFF\xFF");
@@ -762,6 +764,7 @@ void checkSysState() {
       sysStateMsg = sysOnMsg;
       // Mise à jour des compteurs
       tempsOperEnCour = 0;
+      nextMinute = tempsOperEnCour + 60;
       // Publish start time
       publishEvent(StartEventName, startTime);
       Log.info("checkSysState: Système en marche!");
@@ -825,7 +828,7 @@ void checkSysState() {
   } else {
     nexSerial.print("vis cLav.id,0\xFF\xFF\xFF");
   }
-  if (System_mode == rinse) {
+  if (System_mode == rinsage) {
     nexSerial.print("vis cRinc.id,1\xFF\xFF\xFF");
   } else {
     nexSerial.print("vis cRinc.id,0\xFF\xFF\xFF");
@@ -948,7 +951,7 @@ void updateTimeCounters() {
     
     rt2 = secToHrMinSec(tempsDepuisLavage);
     sprintf(tmp2, "%02d:%02d:%02d", rt2.hour, rt2.min, rt2.sec);
-    if (System_mode != rinse) {
+    if (System_mode != rinsage) {
       tempsDepuisLavage++;
     }
 
