@@ -10,5 +10,5 @@
         "string": "cpp"
     },
     "particle.firmwareVersion": "2.0.1",
-    "particle.targetDevice": "PL-Ph-A"
+    "particle.targetDevice": "EB-Osm1"
 }

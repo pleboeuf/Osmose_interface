@@ -31,7 +31,7 @@
 String sysStateMsg = sysOffMsg;
 
 // Firmware version et date
-#define FirmwareVersion "1.0.1" // Version du firmware du capteur.
+#define FirmwareVersion "1.0.2" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -114,21 +114,25 @@ NexTouch *nex_listen_list[] =
 
 // Variables globale
 enum Mode {
-  concentration1234, //0
-  concentration4321, //1
-  lavage_normal,     //2
-  lavage_recirc,     //3
-  rinsage,           //4
-  indefini           //5
+  concentration,     //0
+  lavage_normal,     //1
+  lavage_recirc,     //2
+  rinsage,           //3
+  indefini           //4
 };
 String modeText[] = {
-  "concentration 1-2-3-4", //0
-  "concentration 4-3-2-1", //1
-  "lavage_normal", //2
-  "lavage_recirc", //3
-  "rinsage",       //4
-  "indefini"       //5
+  "concentration", //0
+  "lavage_normal", //1
+  "lavage_recirc", //2
+  "rinsage",       //3
+  "indefini"       //4
 };
+String seqUp = "1-2-3-4";
+String seqDn = "4-3-2-1";
+String seqNa = " - - - ";
+String currentSeq = seqNa;
+String filterSeq = "";
+
 enum Etat {
   marche,
   arret
@@ -174,9 +178,13 @@ const uint32_t dataEntryTimeLimit = 10 * 60; // 1 min
 bool operDataValid = false;
 bool brixDataValid = false;
 double bSeve = 0, bConc = 0;
-double Col1 = 0, Col2 = 0, Col3 = 0, Col4 = 0, dConc = 0;
+double Col1 = 0, Col2 = 0, Col3 = 0, Col4 = 0, debitConc = 0;
 double Temp = 0, Pres = 0;
-String filterSeq = "";
+float debitFiltratgpm;
+float debitTotalgpm;
+float pcConc;
+
+
 
 String hist_data[histLength];
 String hist_perf[histLength];
@@ -201,8 +209,9 @@ SerialLogHandler logHandler(115200, LOG_LEVEL_INFO, {
 // Variables liés aux publications
 uint32_t noSerie = 0;
 long unsigned int newGenTimestamp = 0;
-String StopEventName = "Osmose/Stop";         // Name of the event to be sent to the cloud
-String StartEventName = "Osmose/Start";       // Name of the event to be sent to the cloud
+String StopEventName = "Osmose/Stop";         // Start event name
+String StartEventName = "Osmose/Start";       // Stop event name
+String NewGenAndSN = "device/NewGenSN";        // New generation and serial number
 
 /*
   Attach interrupt handler to pin A1 to monitor pump Osmose Start/Stop
@@ -265,6 +274,7 @@ void setup()
   Log.info("(setup) Enregistrement des variables et fonctions\n");
   Particle.variable("Version", FirmwareVersion);
   Particle.variable("Date", FirmwareDate);
+  Particle.function("reset", remoteReset);
 
     //Wait until Photon receives time from Particle Cloud (or connection to Particle Cloud is lost)
   if (Particle.connected()) {
@@ -456,7 +466,7 @@ void bOkBRIXPushCallback(void *ptr) {
   bConc = readNexTionData(brixConc);
   if (bSeve > 0 && bConc > 0) {
     brixDataValid = true;
-    delay(500);
+    delay(200);
     nexSerial.print("page 0\xFF\xFF\xFF");
   }
   if (operDataValid && brixDataValid && System_state == marche) {
@@ -476,27 +486,29 @@ void bOkOSMPushCallback(void *ptr) {
   Col2 = readNexTionData(col2);delay(1);
   Col3 = readNexTionData(col3);delay(1);
   Col4 = readNexTionData(col4);delay(1);
-  dConc = readNexTionData(conc);delay(1);
+  debitConc = readNexTionData(conc);delay(1);
   Temp = readNexTionData(temp);delay(1);
   Pres = readNexTionData(pres);delay(1);
   filterSeq = readNextionText(seq);
   
-  if (Col1 > 0 && Col2 > 0 && Col3 > 0 && Col4 > 0 && dConc > 0 && Temp > 0 && Pres > 0 && filterSeq.length() > 6) {
+  if (Col1 > 0 && Col2 > 0 && Col3 > 0 && Col4 > 0 && debitConc > 0 && Temp > 0 && Pres > 0 && filterSeq.length() > 6) {
     operDataValid = true;
     delay(100);
     if (System_state == marche && filterSeq != " - - - ") {
-      delay(500);
+      delay(200);
       nexSerial.print("vis cOsm.id,1\xFF\xFF\xFF");
     }
     nexSerial.print("page 0\xFF\xFF\xFF");
     if (filterSeq == "1-2-3-4") {
-      System_mode = concentration1234;
+      System_mode = concentration;
+      currentSeq = seqUp;
       sysStateMsg = sysOsm1234;
       tempsSeq1234 = tempsSeq1234 + tempsOperEnCour;
       tempsSeq4321 = 0;
       nexSerial.print("tSeqName.txt=\"1-2-3-4:\"\xFF\xFF\xFF");      
     } else {
-      System_mode = concentration4321;
+      System_mode = concentration;
+      currentSeq = seqDn;
       sysStateMsg = sysOsm4321;
       tempsSeq1234 = 0;
       tempsSeq4321 = tempsSeq4321 + tempsOperEnCour;
@@ -505,7 +517,7 @@ void bOkOSMPushCallback(void *ptr) {
     publishData(operData, "");
   }
   Log.info("bOkOSMPushCallback: c1= %.1f, c2= %.1f, c3= %.1f, c4= %.1f, Conc= %.1f, Temp=%.1f, Pres= %.0f, Seq: %s",
-                                Col1, Col2, Col3, Col4, dConc, Temp, Pres, filterSeq.c_str());
+                                Col1, Col2, Col3, Col4, debitConc, Temp, Pres, currentSeq.c_str());
   Log.info("bOkOSMPushCallback: operDataValid= %d, brixDataValid= %d", operDataValid, brixDataValid);
   // Send event
 }
@@ -556,6 +568,7 @@ void bOkLAVPopCallback(void *ptr) {
   uint32_t val;
   // lire le Radio bouton de sélection
   if (System_state == marche) {
+    currentSeq = seqNa;
     sysStateMsg = sysLav;
     rNorm.getValue(&val);
     if (val == 1) {
@@ -576,6 +589,7 @@ void bOkLAVPopCallback(void *ptr) {
 // **************************************************************
 void bOkRINCPopCallback(void *ptr) {
   if (System_state == marche) {
+    currentSeq = seqNa;
     System_mode = rinsage;
     sysStateMsg = sysRinse;
     nexSerial.print("page 0\xFF\xFF\xFF");
@@ -632,13 +646,12 @@ String startDateTimeStr(time32_t t) {
 // Format a time string
 // ***************************************************************
 String stopTimeStr(time32_t st, time32_t et) {
-  char thisTime[18] = "";
+  char thisTime[28] = "";
   int timeInterval = et - st;
   int hour = floor(timeInterval / 3600);
   int min = floor((timeInterval - hour * 3600) / 60);
-  // if (hour > 0 || min > 0) {
-    sprintf(thisTime, "%2d:%02d", hour, min);
-  // }
+  int sec = (timeInterval - hour * 3600 - min * 60);
+  sprintf(thisTime, "%02d:%02d:%02d", hour, min, sec);
   Log.info("startDateTimeStr: thisTime = %s", thisTime);
   return thisTime;
 }
@@ -668,15 +681,15 @@ void showSummary() {
 void writeResultsLines(bool pushData, String start, String end) {
   char tmp[105];
   // Entête  ligne 0 et 1
-  hist_data[0] = "    Debut    Densite (Brix)            Debits (GPM)             Temp.   Pres.     Seq.     Duree";
-  hist_data[1] = "date  heure  Seve   Conc.   Col1   Col2   Col3   Col4   Conc.  (deg C)  (PSI)              hr:min";
+  hist_data[0] = "    Debut    Densite (Brix)            Debits (GPM)             Temp.   Pres.    Seq.     Duree";
+  hist_data[1] = "date  heure  Seve   Conc.   Col1   Col2   Col3   Col4   Conc.  (deg C)  (PSI)            hr:mm:ss";
   writeNextionTextData(tl0, hist_data[0]);
   writeNextionTextData(tl1, hist_data[1]);
   // Ligne 2: Données
   if (operDataValid == true && brixDataValid == true){
     if (pushData) pushHistory(hist_data);
-    sprintf(tmp, "%11s %5.1f %6.1f  %6.1f  %5.1f  %5.1f  %5.1f  %5.1f  %6.1f  %6.0f  %10s %7s",
-                  start.c_str(), bSeve, bConc, Col1, Col2, Col3, Col4, dConc, Temp, Pres, filterSeq.c_str(), end.c_str());
+    sprintf(tmp, "%11s %5.1f %6.1f  %6.1f  %5.1f  %5.1f  %5.1f  %5.1f  %6.1f  %6.0f  %8s %10s",
+                  start.c_str(), bSeve, bConc, Col1, Col2, Col3, Col4, debitConc, Temp, Pres, currentSeq.c_str(), end.c_str());
     hist_data[2] = String(tmp);
     writeNextionTextData(tl2, hist_data[2]);
     Log.info("writeResultsLines: Wrote allData field!: tmp= %s", hist_data[2].c_str());
@@ -694,12 +707,9 @@ void writeResultsLines(bool pushData, String start, String end) {
 void writeOperSummaryLines(bool pushData, String start, String end)
 {
   char tmp[100];
-  float debitFiltratgpm;
-  float debitTotalgpm;
-  float pcConc;
   // Entête  ligne 0 et 1
-  hist_perf[0] = "    Debut             Concentre             Filtrat         Total          Duree";
-  hist_perf[1] = "date  heure    % concen.  Debit (GPH)     Debit (GPH)    Debit (GPH)       hr:min";
+  hist_perf[0] = "    Debut             Concentre             Filtrat         Total       Seq.     Duree";
+  hist_perf[1] = "date  heure    % concen.  Debit (GPH)     Debit (GPH)    Debit (GPH)            hr:mm:ss";
   writeNextionTextData(ts0, hist_perf[0]);
   writeNextionTextData(ts1, hist_perf[1]);
   // Ligne 2: Données
@@ -709,9 +719,9 @@ void writeOperSummaryLines(bool pushData, String start, String end)
       pushDataFlag = false;
     }
     debitFiltratgpm = Col1 + Col2 + Col3 + Col4;
-    debitTotalgpm = debitFiltratgpm + dConc;
+    debitTotalgpm = debitFiltratgpm + debitConc;
     pcConc = 100 * debitFiltratgpm / debitTotalgpm;
-    sprintf(tmp, "%11s  %8.0f %11.0f  %14.0f  %13.0f %15s", start.c_str(), pcConc, 60 * dConc, 60 * debitFiltratgpm, 60 * debitTotalgpm, end.c_str());
+    sprintf(tmp, "%11s  %8.0f %11.0f  %14.0f  %13.0f %12s %10s", start.c_str(), pcConc, 60 * debitConc, 60 * debitFiltratgpm, 60 * debitTotalgpm, currentSeq.c_str(), end.c_str());
     hist_perf[2] = String(tmp);
     writeNextionTextData(ts2, hist_perf[2]);
     Log.info("writeOperSummaryLines: Wrote allData field!: tmp= %s", hist_perf[2].c_str());
@@ -729,8 +739,8 @@ void writeOperSummaryLines(bool pushData, String start, String end)
 void initSummaryPanel() {
   nexSerial.print("page 5\xFF\xFF\xFF");
   // Entête  ligne 0 et 1
-  hist_data[0] = "    Debut    Densite (Brix)            Debits (GPM)             Temp.   Pres.     Seq.     Duree";
-  hist_data[1] = "date  heure  Seve   Conc.   Col1   Col2   Col3   Col4   Conc.  (deg C)  (PSI)              hr:min";
+  hist_data[0] = "    Debut    Densite (Brix)            Debits (GPM)             Temp.   Pres.    Seq.     Duree";
+  hist_data[1] = "date  heure  Seve   Conc.   Col1   Col2   Col3   Col4   Conc.  (deg C)  (PSI)            hr:mm:ss";
   writeNextionTextData(tl0, hist_data[0]);
   writeNextionTextData(tl1, hist_data[1]);
   writeNextionTextData(tl2, hist_data[2]);
@@ -738,8 +748,8 @@ void initSummaryPanel() {
   writeNextionTextData(tl4, hist_data[4]);
   writeNextionTextData(tl5, hist_data[5]);
   // Entête  ligne 0 et 1
-  hist_perf[0] = "    Debut             Concentre             Filtrat         Total          Duree";
-  hist_perf[1] = "date  heure    % concen.  Debit (GPH)     Debit (GPH)    Debit (GPH)       hr:min";
+  hist_perf[0] = "    Debut             Concentre             Filtrat         Total        Seq.       Duree";
+  hist_perf[1] = "date  heure    % concen.  Debit (GPH)     Debit (GPH)    Debit (GPH)              hr:mm:ss";
   writeNextionTextData(ts0, hist_perf[0]);
   writeNextionTextData(ts1, hist_perf[1]);
   writeNextionTextData(ts2, hist_perf[2]);
@@ -760,7 +770,7 @@ void checkSysState() {
     // À faire au démarrage
       startTime = Time.now();
       System_state = marche;
-      // timeOffset = Time.second(startTime);
+      currentSeq = seqNa;
       sysStateMsg = sysOnMsg;
       // Mise à jour des compteurs
       tempsOperEnCour = 0;
@@ -840,8 +850,8 @@ void checkSysState() {
 // ***************************************************************
 String makeJSON(uint32_t numSerie, uint32_t timeStamp, uint32_t timer, uint32_t startStopTime, int eData, String mode, String eName){
   char publishString[200];
-  sprintf(publishString,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"timer\": %lu,\"start-stop-time\": %lu,\"eData\":%d,\"mode\": \"%s\",\"eName\": \"%s\"}",
-                            numSerie, newGenTimestamp,          timeStamp,        timer, startStopTime, eData, mode.c_str(), eName.c_str());
+  sprintf(publishString,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"timer\": %lu,\"start-stop-time\": %lu,\"eData\":%d,\"mode\": \"%s\",\"seq\": \"%s\",\"eName\": \"%s\"}",
+                            numSerie, newGenTimestamp,          timeStamp,        timer, startStopTime, eData, mode.c_str(), currentSeq.c_str(), eName.c_str());
   // Log.info ("(makeJSON) - makeJSON: %s",publishString);
   return publishString;
 }
@@ -879,16 +889,16 @@ bool publishData(int dataType, String end) {
   char msg[200];
   if (dataType == operData) {
     eName = "Osmose/operData";
-    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"eName\": \"%s\",\"Col1\": %.1f,\"Col2\": %.1f,\"Col3\": %.1f,\"Col4\": %.1f,\"Conc\": %.1f,\"Temp\": %.1f,\"Pres\": %.1f,\"seq\": %s}",
-                    noSerie,        newGenTimestamp,   eName.c_str(),     Col1,        Col2,         Col3,        Col4,        dConc,         Temp,            Pres,          filterSeq.c_str());
+    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"seq\": \"%s\",\"Col1\": %.1f,\"Col2\": %.1f,\"Col3\": %.1f,\"Col4\": %.1f,\"Conc\": %.1f,\"Temp\": %.1f,\"Pres\": %.0f,\"eName\": \"%s\"}",
+                    noSerie,        newGenTimestamp,     Time.now(),  currentSeq.c_str(),     Col1,         Col2,          Col3,          Col4,       debitConc,        Temp,          Pres,          eName.c_str());
   } else if (dataType == brixData) {
     eName = "Osmose/concData";
-    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"eName\": \"%s\",\"Seve\": %.1f,\"Conc\": %.1f}",
-                    noSerie,        newGenTimestamp,   eName.c_str(),     bSeve,        bConc);
+    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": \"%lu\",\"Seve\": %.1f,\"Conc\": %.1f,\"eName\": \"%s\"}",
+                    noSerie,        newGenTimestamp,     Time.now(),     bSeve,        bConc,        eName.c_str());
   } else if (dataType == summaryData) {
     eName = "Osmose/summaryData";
-    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"eName\": \"%s\",\"PC_Conc\": %d,\"GPH_Conc\": %d,\"GPH_Filtrat\": %d,\"GPH_Total\": %d,\"Durée\": %s}",
-                    noSerie,        newGenTimestamp,   eName.c_str(), 67, 300, 600,  900, end.c_str());
+    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"seq.\": \"%s\",\"PC_Conc\": %.0f,\"Conc_GPH\": %.0f,\"Filtrat_GPH\": %.0f,\"Total_GPH\": %.0f,\"Durée_sec\": %lu,\"eName\": \"%s\"}",
+                    noSerie,        newGenTimestamp,    Time.now(),  currentSeq.c_str(),      pcConc,   60 * debitConc,    60 * debitFiltratgpm,   60 * debitTotalgpm,    tempsOperEnCour,    eName.c_str());
   }
   bool pubSuccess = Particle.publish(eName, msg, PRIVATE, NO_ACK);
   Log.info("publishData: %s", eName.c_str());
@@ -903,8 +913,8 @@ bool publishTimeCounters() {
   noSerie++;
   char msg[200];
   eName = "Osmose/timeCounter";
-  sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"eName\": \"%s\",\"TempsOperEnCour\": %lu,\"TempsSeq1234\": %lu,\"TempsSeq4321\": %lu,\"TempsDepuisLavage\": %lu",
-                    noSerie,        newGenTimestamp,   eName.c_str(),     tempsOperEnCour,        tempsSeq1234,         tempsSeq4321,        tempsDepuisLavage);
+  sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"seq.\": \"%s\",\"TempsOperEnCour\": %lu,\"TempsSeq1234\": %lu,\"TempsSeq4321\": %lu,\"TempsDepuisLavage\": %lu,\"eName\": \"%s\"}",
+                    noSerie,    newGenTimestamp,  currentSeq.c_str(),   tempsOperEnCour,        tempsSeq1234,         tempsSeq4321,        tempsDepuisLavage,   eName.c_str());
   bool pubSuccess = Particle.publish(eName, msg, PRIVATE, NO_ACK);
   Log.info("publishTimeCounters: ");
   return pubSuccess;
@@ -936,11 +946,11 @@ void updateTimeCounters() {
     sprintf(tmp0, "%02d:%02d:%02d", rt0.hour, rt0.min, rt0.sec);
     tempsOperEnCour++;
 
-    if (System_mode == concentration1234) {
+    if (System_mode == concentration && currentSeq == seqUp) {
       rt1 = secToHrMinSec(tempsSeq1234);
       sprintf(tmp1, "%02d:%02d:%02d", rt1.hour, rt1.min, rt1.sec);
       tempsSeq1234++;
-    } else if (System_mode == concentration4321) {
+    } else if (System_mode == concentration && currentSeq == seqDn) {
       rt1 = secToHrMinSec(tempsSeq4321);
       sprintf(tmp1, "%02d:%02d:%02d", rt1.hour, rt1.min, rt1.sec);
       tempsSeq4321++;
@@ -1000,4 +1010,34 @@ void checkAlarm() {
   } else {
     alarmStatus = 0;
   }
+}
+
+// Pour resetter le capteur à distance au besoin
+int remoteReset(String command) {
+// Reset standard
+  if (command == "device"){
+    System.reset();
+// ou juste les numéros de série.
+  } else if (command == "serialNo") {
+    Particle.syncTime();
+    for (int i = 0; i < 30; i++){
+        delay(100UL);
+    }
+    if (Time.isValid()){
+        newGenTimestamp = Time.now();
+        noSerie = 0;
+        Log.info("(remoteReset) - Nouvelle génération de no de série maintenant: %lu", newGenTimestamp);
+        publishEvent(NewGenAndSN, Time.now());
+        return 0;
+    } else {
+        Log.info("(remoteReset) - Time is still invalid!: %lu", Time.now());
+        return -1;
+    }
+// ou redémarre en safe mode (pour forcer une mise à jour)
+  } else if (command == "safeMode") {
+    System.enterSafeMode();
+  } else {
+    return -1;
+  }
+  return -1;
 }
