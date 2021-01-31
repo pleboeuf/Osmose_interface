@@ -31,7 +31,7 @@
 
 
 // Firmware version et date
-#define FirmwareVersion "1.0.3" // Version du firmware du capteur.
+#define FirmwareVersion "1.0.5" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -132,9 +132,9 @@ String fonctionText[] = {
 };
 String seqUp = "1-2-3-4";
 String seqDn = "4-3-2-1";
-String seqNa = " - - - ";
+String seqNa = "?-?-?-?";
 String currentSeq = seqNa;
-String filterSeq = "       ";
+String chosenSeq = seqNa;
 
 enum Etat {
   arret = 0,
@@ -143,16 +143,16 @@ enum Etat {
 
 enum alarmDef {
   noAlarm = 0,
-  alarmNoData = 1,
-  alarmSeq = 2,
-  alarmLavage = 3
+  alarmNoData = -1,
+  alarmSeq = -2,
+  alarmLavage = -3
 };
 alarmDef alarmNo = noAlarm;
 alarmDef previousAlarm = noAlarm;
 String alarmMsg[] = {
   " - - - - - - - - - ",
   "Entrer les donnees!",
-  "Seq. + de 4h!!!    ",
+  "Changer la seq!!!  ",
   "Lavage requis!!!   "
 };
 
@@ -183,9 +183,11 @@ static uint32_t tempsOperEnCour = 0;
 static uint32_t tempsSeq1234 = 0;
 static uint32_t tempsSeq4321 = 0;
 static uint32_t tempsDepuisLavage = 0;
+const uint32_t dataEntryTimeLimit = 20 * 60; // 20 min
 const uint32_t seqTimeLimit = 4 * 60 * 60; // 4 hours
 const uint32_t depuisLavageTimeLimit = 12 * 60 * 60; // 4 hours
-const uint32_t dataEntryTimeLimit = 15 * 60; // 15 min
+
+
 
 bool operDataValid = false;
 bool brixDataValid = false;
@@ -209,7 +211,7 @@ int optoInput = A1;
 bool PumpCurrentState = pumpOFFstate; // Initialize pump in the OFF state
 bool PumpOldState = pumpOFFstate;     // Pour déterminer le chanement d'état
 
-// volatile unsigned long changeTime = 0; // Moment du dernier changement d'état de la pompe
+
 
 /* Define a log handler on Serial1 for log messages */
 SerialLogHandler logHandler(115200, LOG_LEVEL_INFO, {
@@ -253,6 +255,12 @@ PumpState_A1 ThePumpState; // Instantiate the class A1State
 void set_AlarmNo(alarmDef currentAlarm) {
   previousAlarm = alarmNo;
   alarmNo = currentAlarm;
+  // Update status message
+  if (alarmNo < 0) {
+    writeNextionTextData(tstatus, alarmMsg[abs(alarmNo)].c_str());
+  } else {
+    writeNextionTextData(tstatus, sysModeMsg.c_str());
+  }
   Log.info("set_AlarmNo: currentAlarm = %d, previousAlarm = %d", currentAlarm, previousAlarm);
 }
 
@@ -335,6 +343,8 @@ void setup()
       Log.info("Setup: Système en marche!");
     }
     checkSysState();
+    publishAlarm(currentTime, true); //Reset alarm and publish system function
+    publishTimeCounters();
     Log.info("Setup complete!\n\n");
   }
 }
@@ -354,7 +364,7 @@ void loop()
     checkSysState(); // Check for system state and opr. mode
     if (System_state == marche) {
       checkAlarm();
-      publishAlarm(currentTime);
+      publishAlarm(currentTime, false);
     }
   }
 
@@ -363,10 +373,6 @@ void loop()
     nextMinute = tempsOperEnCour + 60;
     if (System_state == marche) {
       publishTimeCounters();
-      // checkAlarm();
-      // if (alarmNo != noAlarm) {
-      //   publishAlarm(currentTime);
-      // }
     }
   }
 
@@ -425,7 +431,7 @@ void writeNextionTextData(NexText destField, String textData) {
 // Button gotoOsmose(bOsmose) Call back
 // **************************************************************
 void bGotoOsmoseCallBack(void *ptr) {
-  if (System_state == marche){
+  if (System_state == marche  && (System_function == indefini)){
     nexSerial.print("page 1\xFF\xFF\xFF");
   }
 }
@@ -434,7 +440,7 @@ void bGotoOsmoseCallBack(void *ptr) {
 // Button gotoOsmose(bOsmose) Call back
 // **************************************************************
 void bGotoBrixCallBack(void *ptr) {
-  if (System_state == marche) {
+  if (System_state == marche && (System_function == concentration)) {
     nexSerial.print("page 2\xFF\xFF\xFF");
   }
 }
@@ -494,8 +500,8 @@ void bOkBRIXPushCallback(void *ptr) {
     delay(200);
     nexSerial.print("page 0\xFF\xFF\xFF");
   }
+  publishData(brixData, "");
   if (operDataValid && brixDataValid && System_state == marche) {
-    publishData(brixData, "");
     publishEvent(StartEventName, startTime);
   }
   set_AlarmNo(noAlarm);
@@ -514,17 +520,15 @@ void bOkOSMPushCallback(void *ptr) {
   debitConc = readNexTionData(conc);delay(1);
   Temp = readNexTionData(temp);delay(1);
   Pres = readNexTionData(pres);delay(1);
-  filterSeq = readNextionText(seq);
+  chosenSeq = readNextionText(seq);
   
-  if (Col1 > 0 && Col2 > 0 && Col3 > 0 && Col4 > 0 && debitConc > 0 && Temp > 0 && Pres > 0 && filterSeq.length() > 6) {
+  if (Col1 > 0 && Col2 > 0 && Col3 > 0 && Col4 > 0 && debitConc > 0 && Temp > 0 && Pres > 0 && chosenSeq.length() > 6) {
     operDataValid = true;
-    delay(100);
-    if (System_state == marche && filterSeq != " - - - ") {
-      delay(200);
+    if (System_state == marche && chosenSeq != seqNa) {
       nexSerial.print("vis cOsm.id,1\xFF\xFF\xFF");
     }
     nexSerial.print("page 0\xFF\xFF\xFF");
-    if (filterSeq == "1-2-3-4") {
+    if (chosenSeq == seqUp) {
       System_function = concentration;
       currentSeq = seqUp;
       sysModeMsg = sysOsm1234;
@@ -540,6 +544,7 @@ void bOkOSMPushCallback(void *ptr) {
       nexSerial.print("tSeqName.txt=\"4-3-2-1:\"\xFF\xFF\xFF");
     }
     set_AlarmNo(noAlarm);
+    publishAlarm(currentTime, true); //Reset alarm and publish system function
     publishData(operData, "");
   }
   Log.info("bOkOSMPushCallback: c1= %.1f, c2= %.1f, c3= %.1f, c4= %.1f, Conc= %.1f, Temp=%.1f, Pres= %.0f, Seq: %s",
@@ -552,8 +557,8 @@ void bOkOSMPushCallback(void *ptr) {
 // Field seq (sequence) POP callback
 // **************************************************************
 void seqPOPCallback(void *ptr) {
-  filterSeq = readNextionText(seq);
-  Log.info("seqPOPCallback: filterSeq= %s", filterSeq.c_str());
+  chosenSeq = readNextionText(seq);
+  Log.info("seqPOPCallback: chosenSeq= %s", chosenSeq.c_str());
 }
 
 // **************************************************************
@@ -569,7 +574,7 @@ void bGotoSommairePopCallback(void *ptr) {
 // Go to Lavage POP callback
 // **************************************************************
 void bGotoLavageCallback(void *ptr) {
-  if (System_state == marche) {
+  if (System_state == marche  && (System_function == indefini)) {
     nexSerial.print("page 3\xFF\xFF\xFF");
   }
   Log.info("bGotoLavageCallback!");
@@ -579,11 +584,8 @@ void bGotoLavageCallback(void *ptr) {
 // Go to Rinçage POP callback
 // **************************************************************
 void bGotoRincageCallback(void *ptr) {
-  if (System_state == marche) {
+  if (System_state == marche && (System_function == indefini)) {
     nexSerial.print("page 4\xFF\xFF\xFF");
-    set_AlarmNo(noAlarm);
-    tempsDepuisLavage = tempsDepuisLavage - tempsOperEnCour;
-    System_function = rinsage;
   }
   Log.info("bGotoRincageCallback!");
 }
@@ -609,6 +611,7 @@ void bOkLAVPopCallback(void *ptr) {
   nexSerial.print("page 0\xFF\xFF\xFF");
   nexSerial.print("vis cLav.id=1\"\xFF\xFF\xFF");
   publishEvent(StartEventName, startTime);
+  publishTimeCounters();
   }
   nexSerial.print("page 0\xFF\xFF\xFF");
   Log.info("bOkLAVPopCallback! val = %lu", val);
@@ -619,6 +622,8 @@ void bOkLAVPopCallback(void *ptr) {
 // **************************************************************
 void bOkRINCPopCallback(void *ptr) {
   if (System_state == marche) {
+    set_AlarmNo(noAlarm);
+    tempsDepuisLavage = tempsDepuisLavage + tempsOperEnCour;
     currentSeq = seqNa;
     System_function = rinsage;
     sysModeMsg = sysRinse;
@@ -800,7 +805,7 @@ void checkSysState() {
     // À faire au démarrage
       startTime = Time.now();
       System_state = marche;
-      currentSeq = seqNa;
+      currentSeq = seqNa; // À ce moment on ne connaît pas encore quel séquence sera utilisé
       sysModeMsg = sysOnMsg;
       // Mise à jour des compteurs
       tempsOperEnCour = 0;
@@ -845,8 +850,8 @@ void checkSysState() {
     nexSerial.print("ind.bco=RED\xFF\xFF\xFF");
   }
   // Update status message
-  if (alarmNo > 0) {
-    writeNextionTextData(tstatus, alarmMsg[alarmNo].c_str());
+  if (alarmNo < 0) {
+    writeNextionTextData(tstatus, alarmMsg[abs(alarmNo)].c_str());
   } else {
     writeNextionTextData(tstatus, sysModeMsg.c_str());
   }
@@ -881,7 +886,7 @@ void checkSysState() {
 String makeJSON(uint32_t numSerie, uint32_t timeStamp, uint32_t timer, uint32_t startStopTime, int fonctionCode, int alarmNo, String fonction, String eName){
   char publishString[300];
   sprintf(publishString,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"timer\": %lu,\"start-stop-time\": %lu,\"fonctionCode\":%d,\"state\":%d,\"alarmNo\":%d,\"alarmMsg\": \"%s\",\"fonction\": \"%s\",\"sequence\": \"%s\",\"eName\": \"%s\"}",
-                            numSerie,        newGenTimestamp,    timeStamp,        timer,           startStopTime,          fonctionCode,   System_state,    alarmNo,     alarmMsg[alarmNo].c_str(),  fonction.c_str(),   currentSeq.c_str(),   eName.c_str());
+                            numSerie,        newGenTimestamp,    timeStamp,        timer,           startStopTime,          fonctionCode,   System_state,    alarmNo,     alarmMsg[abs(alarmNo)].c_str(),  fonction.c_str(),   currentSeq.c_str(),   eName.c_str());
   Log.info ("(makeJSON) - makeJSON: %u", strlen(publishString));
   return publishString;
 }
@@ -900,9 +905,9 @@ bool publishEvent(String eName, uint32_t evenTime) {
 // ***************************************************************
 // Publication des alarmes
 // ***************************************************************
-bool publishAlarm(uint32_t evenTime) {
+bool publishAlarm(uint32_t evenTime, bool force) {
   bool pubSuccess = false;
-  if (alarmNo != previousAlarm){
+  if ((alarmNo != previousAlarm) || force) {
     noSerie++;
     String eName = alarmEventName; //"Osmose/alarm"
     String msg = makeJSON(noSerie, Time.now(), millis(), evenTime, System_function, alarmNo, fonctionText[System_function], eName.c_str());
@@ -993,7 +998,7 @@ void updateTimeCounters() {
       tempsSeq4321++;
     } else {
       sprintf(tmp1, "%02d:%02d:%02d", 0, 0, 0);
-      nexSerial.print("tSeqName.txt=\" - - - :\"\xFF\xFF\xFF");
+      nexSerial.print("tSeqName.txt=\"?-?-?-?:\"\xFF\xFF\xFF");
     }
     
     rt2 = secToHrMinSec(tempsDepuisLavage);
@@ -1038,21 +1043,20 @@ void checkAlarm() {
       digitalWrite(alarmBuzzer, LOW);
       delay(50);
     } 
-  } else if (System_function == indefini) {
-    // if ((operDataValid == false || brixDataValid == false) && tempsOperEnCour > dataEntryTimeLimit) {
-    if (tempsOperEnCour > dataEntryTimeLimit) {
-      nexSerial.print("status.pco=63488\xFF\xFF\xFF");
-      set_AlarmNo(alarmNoData);
-      digitalWrite(alarmBuzzer, HIGH);
-      delay(25);
-      digitalWrite(alarmBuzzer, LOW);
-      delay(25); 
-      digitalWrite(alarmBuzzer, HIGH);
-      delay(150);
-      digitalWrite(alarmBuzzer, LOW);
-      delay(25);
-    } 
-  }
+  } 
+  if ((operDataValid == false || brixDataValid == false) && tempsOperEnCour > dataEntryTimeLimit) {
+    nexSerial.print("status.pco=63488\xFF\xFF\xFF");
+    set_AlarmNo(alarmNoData);
+    digitalWrite(alarmBuzzer, HIGH);
+    delay(25);
+    digitalWrite(alarmBuzzer, LOW);
+    delay(25); 
+    digitalWrite(alarmBuzzer, HIGH);
+    delay(150);
+    digitalWrite(alarmBuzzer, LOW);
+    delay(25);
+  } 
+  // }
 }
 
 // ***************************************************************
