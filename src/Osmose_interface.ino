@@ -31,7 +31,7 @@
 
 
 // Firmware version et date
-#define FirmwareVersion "1.0.5" // Version du firmware du capteur.
+#define FirmwareVersion "1.0.6" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -216,7 +216,7 @@ bool PumpOldState = pumpOFFstate;     // Pour déterminer le chanement d'état
 /* Define a log handler on Serial1 for log messages */
 SerialLogHandler logHandler(115200, LOG_LEVEL_INFO, {
                                                         // Logging level for non-application messages
-                                                        {"app", LOG_LEVEL_NONE} // Logging level for application messages
+                                                        {"app", LOG_LEVEL_INFO} // Logging level for application messages
                                                     });
 
 // Variables liés aux publications
@@ -885,8 +885,8 @@ void checkSysState() {
 // ***************************************************************
 String makeJSON(uint32_t numSerie, uint32_t timeStamp, uint32_t timer, uint32_t startStopTime, int fonctionCode, int alarmNo, String fonction, String eName){
   char publishString[300];
-  sprintf(publishString,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"timer\": %lu,\"start-stop-time\": %lu,\"fonctionCode\":%d,\"state\":%d,\"alarmNo\":%d,\"alarmMsg\": \"%s\",\"fonction\": \"%s\",\"sequence\": \"%s\",\"eName\": \"%s\"}",
-                            numSerie,        newGenTimestamp,    timeStamp,        timer,           startStopTime,          fonctionCode,   System_state,    alarmNo,     alarmMsg[abs(alarmNo)].c_str(),  fonction.c_str(),   currentSeq.c_str(),   eName.c_str());
+  sprintf(publishString,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"timer\": %lu,\"startStopTime\": %lu,\"fonctionCode\":%d,\"state\":%d,\"alarmNo\":%d,\"alarmMsg\": \"%s\",\"fonction\": \"%s\",\"sequence\": \"%s\",\"runTimeSec\": %lu,\"eName\": \"%s\",\"replay\":%d}",
+                            numSerie,        newGenTimestamp,    timeStamp,        timer,           startStopTime,        fonctionCode,  System_state,  alarmNo, alarmMsg[abs(alarmNo)].c_str(),  fonction.c_str(), currentSeq.c_str(),  tempsOperEnCour,  eName.c_str(), false);
   Log.info ("(makeJSON) - makeJSON: %u", strlen(publishString));
   return publishString;
 }
@@ -927,20 +927,20 @@ bool publishData(int dataType, String end) {
   char msg[300];
   if (dataType == operData) {
     eName = operDataEventName; //"Osmose/operData"
-    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"sequence\": \"%s\",\"Col1\": %.1f,\"Col2\": %.1f,\"Col3\": %.1f,\"Col4\": %.1f,\"Conc\": %.1f,\"Temp\": %.1f,\"Pres\": %.0f,\"eName\": \"%s\"}",
-                    noSerie,        newGenTimestamp,     Time.now(),  currentSeq.c_str(),     Col1,         Col2,          Col3,          Col4,       debitConc,        Temp,          Pres,          eName.c_str());
+    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"sequence\": \"%s\",\"Col1\": %.1f,\"Col2\": %.1f,\"Col3\": %.1f,\"Col4\": %.1f,\"Conc\": %.1f,\"Temp\": %.1f,\"Pres\": %.0f,\"eName\": \"%s\",\"replay\":%d}",
+                    noSerie,        newGenTimestamp,     Time.now(),  currentSeq.c_str(),     Col1,         Col2,          Col3,          Col4,       debitConc,        Temp,          Pres,          eName.c_str(),       false);
   } else if (dataType == brixData) {
     eName = concDataEventName; //"Osmose/concData"
     sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": \"%lu\",\"BrixSeve\": %.1f,\"BrixConc\": %.1f,\"eName\": \"%s\"}",
                     noSerie,        newGenTimestamp,     Time.now(),     bSeve,        bConc,        eName.c_str());
   } else if (dataType == summaryData) {
     eName = summaryDataEventName; //"Osmose/summaryData"
-    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"sequence\": \"%s\",\"PC_Conc\": %.0f,\"Conc_GPH\": %.0f,\"Filtrat_GPH\": %.0f,\"Total_GPH\": %.0f,\"Durée_sec\": %lu,\"eName\": \"%s\"}",
-                    noSerie,        newGenTimestamp,    Time.now(),  currentSeq.c_str(),      pcConc,   60 * debitConc,    60 * debitFiltratgpm,   60 * debitTotalgpm,    tempsOperEnCour,    eName.c_str());
+    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"sequence\": \"%s\",\"PC_Conc\": %.0f,\"Conc_GPH\": %.0f,\"Filtrat_GPH\": %.0f,\"Total_GPH\": %.0f,\"runTimeSec\": %lu,\"eName\": \"%s\",\"replay\":%d}",
+                    noSerie,        newGenTimestamp,    Time.now(),  currentSeq.c_str(),      pcConc,   60 * debitConc,    60 * debitFiltratgpm,   60 * debitTotalgpm,    tempsOperEnCour,    eName.c_str(),         false);
   } else if (dataType == clearSummaryData) {
     eName = summaryDataEventName; //"Osmose/summaryData"
-    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"sequence\": \"%s\",\"PC_Conc\": %.0f,\"Conc_GPH\": %.0f,\"Filtrat_GPH\": %.0f,\"Total_GPH\": %.0f,\"Durée_sec\": %lu,\"eName\": \"%s\"}",
-                    noSerie,        newGenTimestamp,    Time.now(),  currentSeq.c_str(),         (double)0,        (double)0,          (double)0,         (double)0,          tempsOperEnCour,    eName.c_str());
+    sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"timestamp\": %lu,\"sequence\": \"%s\",\"PC_Conc\": %.0f,\"Conc_GPH\": %.0f,\"Filtrat_GPH\": %.0f,\"Total_GPH\": %.0f,\"runTimeSec\": %lu,\"eName\": \"%s\",\"replay\":%d}",
+                    noSerie,        newGenTimestamp,    Time.now(),  currentSeq.c_str(),         (double)0,        (double)0,          (double)0,         (double)0,          tempsOperEnCour,    eName.c_str(),     false);
   }
   bool pubSuccess = Particle.publish(eName, msg, PRIVATE, NO_ACK);
   Log.info("publishData: %d", strlen(msg));
@@ -955,8 +955,8 @@ bool publishTimeCounters() {
   noSerie++;
   char msg[300];
   eName = timeCounterEventName; //"Osmose/timeCounter"
-  sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"sequence\": \"%s\",\"TempsOperEnCour\": %lu,\"TempsSeq1234\": %lu,\"TempsSeq4321\": %lu,\"TempsDepuisLavage\": %lu,\"eName\": \"%s\"}",
-                    noSerie,    newGenTimestamp,  currentSeq.c_str(),   tempsOperEnCour,        tempsSeq1234,         tempsSeq4321,        tempsDepuisLavage,   eName.c_str());
+  sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"sequence\": \"%s\",\"TempsOperEnCour\": %lu,\"TempsSeq1234\": %lu,\"TempsSeq4321\": %lu,\"TempsDepuisLavage\": %lu,\"eName\": \"%s\",\"replay\":%d}",
+                    noSerie,    newGenTimestamp,  currentSeq.c_str(),   tempsOperEnCour,        tempsSeq1234,         tempsSeq4321,        tempsDepuisLavage,            eName.c_str(),     false);
   bool pubSuccess = Particle.publish(eName, msg, PRIVATE, NO_ACK);
   Log.info("publishTimeCounters: %d", strlen(msg));
   return pubSuccess;
