@@ -31,7 +31,7 @@
 
 
 // Firmware version et date
-#define FirmwareVersion "1.0.6" // Version du firmware du capteur.
+#define FirmwareVersion "1.0.7" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -431,7 +431,7 @@ void writeNextionTextData(NexText destField, String textData) {
 // Button gotoOsmose(bOsmose) Call back
 // **************************************************************
 void bGotoOsmoseCallBack(void *ptr) {
-  if (System_state == marche  && (System_function == indefini)){
+  if ((System_state == marche) && ((System_function == indefini) || (System_function == concentration))){
     nexSerial.print("page 1\xFF\xFF\xFF");
   }
 }
@@ -497,7 +497,7 @@ void bOkBRIXPushCallback(void *ptr) {
   bConc = readNexTionData(brixConc);
   if (bSeve > 0 && bConc > 0) {
     brixDataValid = true;
-    delay(200);
+    delay(100);
     nexSerial.print("page 0\xFF\xFF\xFF");
   }
   publishData(brixData, "");
@@ -565,7 +565,7 @@ void seqPOPCallback(void *ptr) {
 // Sommaire POP callback
 // **************************************************************
 void bGotoSommairePopCallback(void *ptr) {
-  delay(100);
+  delay(50);
   nexSerial.print("page 5\xFF\xFF\xFF");
   Log.info("bGotoSommairePopCallback!");
 }
@@ -696,7 +696,7 @@ String stopTimeStr(time32_t st, time32_t et) {
 // ***************************************************************
 void showSummary() {
   if (operDataValid && brixDataValid) {
-    delay(500);
+    delay(200);
     nexSerial.print("page 5\xFF\xFF\xFF");
     String start_time_str = startDateTimeStr(startTime);
     String end_time_str = stopTimeStr(startTime, endTime);
