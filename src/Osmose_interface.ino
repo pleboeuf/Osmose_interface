@@ -10,7 +10,8 @@
 #include "../lib/ITEADLIB_Nextion/src/ITEADLIB_Nextion.h"
 #include "math.h"
 #define dbSerial Serial
-#define ONE_DAY_MILLIS (24 * 60 * 60 * 1000)
+#define ONE_DAY (24 * 60 * 60)
+#define FIVE_MINUTES (5 * 60)
 #define pumpDebounceDelay 100 // Debounce time in milliseconds for pump mechanical start/stop switch
 #define pumpONstate 0         // Pump signal is active low.
 #define pumpOFFstate 1        // Pump signal is active low.
@@ -31,7 +32,7 @@
 
 
 // Firmware version et date
-#define FirmwareVersion "1.0.7" // Version du firmware du capteur.
+#define FirmwareVersion "1.0.8" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -172,6 +173,7 @@ char now[12];
 int previousSec = 0;
 unsigned long currentTime = 0;
 unsigned long lastUpdateTime = 0;
+unsigned long lastPublishTime = 0;
 unsigned startTime;
 unsigned endTime;
 unsigned tempsOperOsmTotal = 0;
@@ -377,9 +379,15 @@ void loop()
   }
 
   // Sync time once a day
-  if (currentTime > (lastUpdateTime + ONE_DAY_MILLIS)) {
+  if (currentTime > (lastUpdateTime + ONE_DAY)) {
     Particle.syncTime();
     lastUpdateTime = currentTime;
+  }
+
+  // Publish every 5 minutes when not in use
+  if ((System_state == arret) && (currentTime > (lastPublishTime + FIVE_MINUTES))) {
+    publishTimeCounters();
+    lastPublishTime = currentTime;
   }
 
   Particle.process();
@@ -1042,21 +1050,19 @@ void checkAlarm() {
       delay(50);
       digitalWrite(alarmBuzzer, LOW);
       delay(50);
+    } else if ((operDataValid == false || brixDataValid == false) && tempsOperEnCour > dataEntryTimeLimit) {
+      nexSerial.print("status.pco=63488\xFF\xFF\xFF");
+      set_AlarmNo(alarmNoData);
+      digitalWrite(alarmBuzzer, HIGH);
+      delay(25);
+      digitalWrite(alarmBuzzer, LOW);
+      delay(25); 
+      digitalWrite(alarmBuzzer, HIGH);
+      delay(150);
+      digitalWrite(alarmBuzzer, LOW);
+      delay(25);
     } 
   } 
-  if ((operDataValid == false || brixDataValid == false) && tempsOperEnCour > dataEntryTimeLimit) {
-    nexSerial.print("status.pco=63488\xFF\xFF\xFF");
-    set_AlarmNo(alarmNoData);
-    digitalWrite(alarmBuzzer, HIGH);
-    delay(25);
-    digitalWrite(alarmBuzzer, LOW);
-    delay(25); 
-    digitalWrite(alarmBuzzer, HIGH);
-    delay(150);
-    digitalWrite(alarmBuzzer, LOW);
-    delay(25);
-  } 
-  // }
 }
 
 // ***************************************************************
