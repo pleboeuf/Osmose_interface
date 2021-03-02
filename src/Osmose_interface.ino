@@ -32,7 +32,7 @@
 
 
 // Firmware version et date
-#define FirmwareVersion "1.0.8" // Version du firmware du capteur.
+#define FirmwareVersion "1.0.9" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -632,6 +632,7 @@ void bOkRINCPopCallback(void *ptr) {
   if (System_state == marche) {
     set_AlarmNo(noAlarm);
     tempsDepuisLavage = tempsDepuisLavage + tempsOperEnCour;
+    tempsSeq1234 = tempsSeq4321 = 0;
     currentSeq = seqNa;
     System_function = rinsage;
     sysModeMsg = sysRinse;
