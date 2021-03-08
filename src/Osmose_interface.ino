@@ -32,7 +32,7 @@
 
 
 // Firmware version et date
-#define FirmwareVersion "1.0.9" // Version du firmware du capteur.
+#define FirmwareVersion "1.0.10" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -820,7 +820,7 @@ void checkSysState() {
       tempsOperEnCour = 0;
       nextMinute = tempsOperEnCour + 60;
       publishEvent(StartEventName, startTime); // Publish start time
-      publishData(clearSummaryData, ""); // Reset summary results
+      // publishData(clearSummaryData, ""); // Reset summary results
       publishTimeCounters(); // Reset web time display
       Log.info("checkSysState: Système en marche!");
     } else {
