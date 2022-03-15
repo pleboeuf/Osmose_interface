@@ -9,6 +9,6 @@
         "stdexcept": "cpp",
         "string": "cpp"
     },
-    "particle.firmwareVersion": "2.0.1",
+    "particle.firmwareVersion": "3.1.0",
     "particle.targetDevice": "EB-Osm1"
 }

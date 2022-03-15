@@ -964,6 +964,11 @@ bool publishTimeCounters() {
   noSerie++;
   char msg[300];
   eName = timeCounterEventName; //"Osmose/timeCounter"
+  // This is a rapid fix for the event overrun at Particle
+  // délais de 1 seconde
+  for (int i = 0; i < 10; i++){
+      delay(100UL);
+  }
   sprintf(msg,"{\"noSerie\": %lu,\"generation\": %lu,\"sequence\": \"%s\",\"TempsOperEnCour\": %lu,\"TempsSeq1234\": %lu,\"TempsSeq4321\": %lu,\"TempsDepuisLavage\": %lu,\"eName\": \"%s\",\"replay\":%d}",
                     noSerie,    newGenTimestamp,  currentSeq.c_str(),   tempsOperEnCour,        tempsSeq1234,         tempsSeq4321,        tempsDepuisLavage,            eName.c_str(),     false);
   bool pubSuccess = Particle.publish(eName, msg, PRIVATE, NO_ACK);
