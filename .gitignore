@@ -6,4 +6,5 @@
 *.0
 *.cpp
 *rsa*
+.vscode
 target/
