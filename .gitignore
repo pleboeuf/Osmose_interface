@@ -6,5 +6,5 @@
 *.0
 *.cpp
 *rsa*
-.vscode/
+.vscode/*.json
 target/
