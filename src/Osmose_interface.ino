@@ -31,7 +31,7 @@
 #define clearSummaryData 3 // Send an event to set the summary results to zero at start time
 
 // Firmware version et date
-#define FirmwareVersion "1.0.11" // Version du firmware du capteur.
+#define FirmwareVersion "1.1.0" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -314,7 +314,7 @@ void setup()
   Particle.variable("Version", FirmwareVersion);
   Particle.variable("Date", FirmwareDate);
   Particle.variable("config", config);
-  myIpString =  WiFi.localIP().toString().c_str();
+  myIpString = WiFi.localIP().toString().c_str();
   Particle.variable("myIPaddress", myIpString);
   Particle.function("reset", remoteReset);
 
@@ -1084,8 +1084,8 @@ bool publishTimeCounters()
   {
     delay(100UL);
   }
-  sprintf(msg, "{\"noSerie\": %lu,\"generation\": %lu,\"sequence\": \"%s\",\"TempsOperEnCour\": %lu,\"TempsSeq1234\": %lu,\"TempsSeq4321\": %lu,\"TempsDepuisLavage\": %lu,\"eName\": \"%s\",\"replay\":%d}",
-          noSerie, newGenTimestamp, currentSeq.c_str(), tempsOperEnCour, tempsSeq1234, tempsSeq4321, tempsDepuisLavage, eName.c_str(), false);
+  sprintf(msg, "{\"noSerie\": %lu,\"generation\": %lu,\"state\":%d,\"sequence\": \"%s\",\"TempsOperEnCour\": %lu,\"TempsSeq1234\": %lu,\"TempsSeq4321\": %lu,\"TempsDepuisLavage\": %lu,\"eName\": \"%s\",\"replay\":%d}",
+          noSerie, newGenTimestamp, System_state, currentSeq.c_str(), tempsOperEnCour, tempsSeq1234, tempsSeq4321, tempsDepuisLavage, eName.c_str(), false);
   bool pubSuccess = Particle.publish(eName, msg, PRIVATE, NO_ACK);
   Log.info("publishTimeCounters: %d", strlen(msg));
   return pubSuccess;
@@ -1214,33 +1214,49 @@ int remoteReset(String command)
   }
   else if (command == "serialNo")
   {
-    Particle.syncTime();
-    for (int i = 0; i < 30; i++)
-    {
-      delay(100UL);
-    }
-    if (Time.isValid())
-    {
-      newGenTimestamp = Time.now();
-      noSerie = 0;
-      Log.info("(remoteReset) - Nouvelle génération de no de série maintenant: %lu", newGenTimestamp);
-      publishEvent(NewGenAndSN, Time.now());
-      return 0;
-    }
-    else
-    {
-      Log.info("(remoteReset) - Time is still invalid!: %lu", Time.now());
-      return -1;
-    }
-    // ou redémarre en safe mode (pour forcer une mise à jour)
+    resetSerialNo();
   }
   else if (command == "safeMode")
   {
     System.enterSafeMode();
+  }
+  else if (command == "dureeSeq_1234")
+  {
+    tempsSeq1234 = 0;
+    return 0;
+  }
+  else if (command == "dureeSeq_4321")
+  {
+    tempsSeq4321 = 0;
+    return 0;
+  }
+  else if (command == "TdepuisLavage")
+  {
+    tempsDepuisLavage = 0;
+    return 0;
   }
   else
   {
     return -1;
   }
   return -1;
+}
+
+int resetSerialNo()
+{
+  Particle.syncTime();
+  delay(3 * 1000);
+  if (Time.isValid())
+  {
+    newGenTimestamp = Time.now();
+    noSerie = 0;
+    Log.info("(resetSerialNo) - Nouvelle génération de no de série maintenant: %lu", newGenTimestamp);
+    publishEvent(NewGenAndSN, Time.now());
+    return 0;
+  }
+  else
+  {
+    Log.info("(resetSerialNo) - Time is still invalid!: %lu", Time.now());
+    return -1;
+  }
 }
