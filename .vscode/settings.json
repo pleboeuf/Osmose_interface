@@ -10,5 +10,6 @@
     },
     "particle.firmwareVersion": "3.3.1",
     "particle.targetPlatform": "photon",
-    "particle.targetDevice": "PL-Ph-B"
+    "particle.targetDevice": "PL-Ph-B",
+    "cmake.configureOnOpen": false
 }

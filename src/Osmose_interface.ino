@@ -133,7 +133,7 @@ String fonctionText[] = {
 String seqUp = "1-2-3-4";
 String seqDn = "4-3-2-1";
 String seqNa = "?-?-?-?";
-String currentSeq = seqNa;
+retained String currentSeq = seqNa;
 String chosenSeq = seqNa;
 
 enum Etat
@@ -177,27 +177,27 @@ unsigned long lastUpdateTime = 0;
 unsigned long lastPublishTime = 0;
 unsigned startTime;
 unsigned endTime;
-unsigned tempsOperOsmTotal = 0;
-unsigned tempsOperOsmSequence = 0;
-unsigned tempsOperLavage = 0;
-unsigned tempsOperRinsage = 0;
+retained unsigned tempsOperOsmTotal = 0;
+retained unsigned tempsOperOsmSequence = 0;
+retained unsigned tempsOperLavage = 0;
+retained unsigned tempsOperRinsage = 0;
 unsigned nextMinute = 60;
-static uint32_t tempsOperEnCour = 0;
-static uint32_t tempsSeq1234 = 0;
-static uint32_t tempsSeq4321 = 0;
-static uint32_t tempsDepuisLavage = 0;
+retained static uint32_t tempsOperEnCour = 0;
+retained static uint32_t tempsSeq1234 = 0;
+retained static uint32_t tempsSeq4321 = 0;
+retained static uint32_t tempsDepuisLavage = 0;
 const uint32_t dataEntryTimeLimit = 20 * 60;         // 20 min
 const uint32_t seqTimeLimit = 4 * 60 * 60;           // 4 hours
 const uint32_t depuisLavageTimeLimit = 12 * 60 * 60; // 4 hours
 
 bool operDataValid = false;
 bool brixDataValid = false;
-double bSeve = 0, bConc = 0;
-double Col1 = 0, Col2 = 0, Col3 = 0, Col4 = 0, debitConc = 0;
-double Temp = 0, Pres = 0;
-float debitFiltratgpm;
-float debitTotalgpm;
-float pcConc;
+retained double bSeve = 0, bConc = 0;
+retained double Col1 = 0, Col2 = 0, Col3 = 0, Col4 = 0, debitConc = 0;
+retained double Temp = 0, Pres = 0;
+retained float debitFiltratgpm;
+retained float debitTotalgpm;
+retained float pcConc;
 
 String hist_data[histLength];
 String hist_perf[histLength];
@@ -317,6 +317,7 @@ void setup()
   myIpString = WiFi.localIP().toString().c_str();
   Particle.variable("myIPaddress", myIpString);
   Particle.function("reset", remoteReset);
+  Particle.function("Set", remoteSet);
 
   // Wait until Photon receives time from Particle Cloud (or connection to Particle Cloud is lost)
   if (Particle.connected())
@@ -390,7 +391,14 @@ void loop()
     if (System_state == marche)
     {
       publishTimeCounters();
+      lastPublishTime = currentTime;
     }
+  }
+  if ((System_state == arret) && (currentTime > (lastPublishTime + FIVE_MINUTES)))
+  {
+    // Publish every 5 minutes when not in use
+    publishTimeCounters();
+    lastPublishTime = currentTime;
   }
 
   // Sync time once a day
@@ -398,13 +406,6 @@ void loop()
   {
     Particle.syncTime();
     lastUpdateTime = currentTime;
-  }
-
-  // Publish every 5 minutes when not in use
-  if ((System_state == arret) && (currentTime > (lastPublishTime + FIVE_MINUTES)))
-  {
-    publishTimeCounters();
-    lastPublishTime = currentTime;
   }
 
   Particle.process();
@@ -1259,4 +1260,67 @@ int resetSerialNo()
     Log.info("(resetSerialNo) - Time is still invalid!: %lu", Time.now());
     return -1;
   }
+}
+
+// ***************************************************************
+// Pour resetter le capteur à distance au besoin
+// ***************************************************************
+int remoteSet(String command)
+{
+  String token;
+  String data;
+  int sep = command.indexOf(",");
+  int result = -1;
+  if (sep > 0)
+  {
+    token = command.substring(0, sep);
+    data = command.substring(sep + 1);
+  }
+  else
+  {
+    return -1; // Fail
+  }
+
+  if (token == "dureeSeq1234")
+  {
+    tempsSeq1234 = data.toInt();
+    publishData(operData, "");
+    result = 0;
+  }
+  else if (token == "dureeSeq4321")
+  {
+    tempsSeq4321 = data.toInt();
+    publishData(operData, "");
+    result = 0;
+  }
+  else if (token == "dureeOperEnCour")
+  {
+    tempsOperEnCour = data.toInt();
+    publishData(operData, "");
+    result = 0;
+  }
+  else if (token == "tempsDepuisLavage")
+  {
+    tempsDepuisLavage = data.toInt();
+    publishData(operData, "");
+    result = 0;
+  }
+  else if (token == "brixSeve")
+  {
+    bSeve = data.toInt();
+    publishData(brixData, "");
+    result = 0;
+  }
+  else if (token == "brixConc")
+  {
+    bConc = data.toInt();
+    publishData(brixData, "");
+    result = 0;
+  }
+  else
+  {
+    result = -1;
+  }
+  publishTimeCounters();
+  return result;
 }
