@@ -31,7 +31,7 @@
 #define clearSummaryData 3 // Send an event to set the summary results to zero at start time
 
 // Firmware version et date
-#define FirmwareVersion "1.1.0" // Version du firmware du capteur.
+#define FirmwareVersion "1.1.1" // Version du firmware du capteur.
 String F_Date = __DATE__;
 String F_Time = __TIME__;
 String FirmwareDate = F_Date + " " + F_Time; // Date et heure de compilation UTC
@@ -1307,13 +1307,13 @@ int remoteSet(String command)
   }
   else if (token == "brixSeve")
   {
-    bSeve = data.toInt();
+    bSeve = data.toFloat();
     publishData(brixData, "");
     result = 0;
   }
   else if (token == "brixConc")
   {
-    bConc = data.toInt();
+    bConc = data.toFloat();
     publishData(brixData, "");
     result = 0;
   }
